@@ -1,0 +1,15 @@
+idf_component_register(SRCS 
+                        "main.cpp"
+                        "matrix/hub75_driver.cpp"
+                        "esp/espio.c"
+                        "events/edt.cpp"
+                       INCLUDE_DIRS 
+                        "."
+                        "matrix/"
+                        "esp/"
+                        "events/"
+                       REQUIRES 
+                        driver
+                        nvs_flash
+                        esp_timer
+                        esp_lcd)
