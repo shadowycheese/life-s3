@@ -47,7 +47,7 @@ void Hub75Driver::deinit()
 bool Hub75Driver::init()
 {
     Hub75DriverConfig cfg = {
-        .clock_div_num = 200,
+        .clock_div_num = 8,
         .clk_invert = false,
         .swap_byte_order = false, //
     };
@@ -207,7 +207,7 @@ void Hub75Driver::build_descriptors()
     }
 }
 
-void Hub75Driver::encode_frame(const uint8_t *fb)
+void Hub75Driver::encode_frame(const uint16_t *fb)
 {
     const uint16_t blank = (1u << BitOE);
 
@@ -217,9 +217,8 @@ void Hub75Driver::encode_frame(const uint8_t *fb)
         {
             int c = x % 64;
             int p = x / 64;
-            int g2 = g;
 
-            uint16_t row_addr = ((uint16_t)(g2 - (p == 0 ? 1 : 0)) << AddrShift);
+            uint16_t row_addr = ((uint16_t)(g - (p == 0 ? 1 : 0)) << AddrShift);
             uint16_t w = row_addr | blank;
 
             if (c < (_width - 1))
@@ -229,15 +228,15 @@ void Hub75Driver::encode_frame(const uint8_t *fb)
 
             if (fb)
             {
-                uint8_t r1 = fb[(size_t)g * _width + c];
-                uint8_t r2 = fb[(size_t)(g + _rows) * _width + c];
+                uint16_t r1 = fb[(size_t)g * _width + c];
+                uint16_t r2 = fb[(size_t)(g + _rows) * _width + c];
 
-                w |= ((r1 >> 4) & 0x3) > p ? (1 << BitR1) : 0;
-                w |= ((r1 >> 2) & 0x3) > p ? (1 << BitG1) : 0;
-                w |= ((r1) & 0x3) > p ? (1 << BitB1) : 0;
-                w |= ((r2 >> 4) & 0x3) > p ? (1 << BitR2) : 0;
-                w |= ((r2 >> 2) & 0x3) > p ? (1 << BitG2) : 0;
-                w |= ((r2) & 0x3) > p ? (1 << BitB2) : 0;
+                w |= ((r1 >> 8) & 0xF) > p ? (1 << BitR1) : 0;
+                w |= ((r1 >> 4) & 0xF) > p ? (1 << BitG1) : 0;
+                w |= ((r1) & 0xF) > p ? (1 << BitB1) : 0;
+                w |= ((r2 >> 8) & 0xF) > p ? (1 << BitR2) : 0;
+                w |= ((r2 >> 4) & 0xF) > p ? (1 << BitG2) : 0;
+                w |= ((r2) & 0xF) > p ? (1 << BitB2) : 0;
             }
 
             if (c == (_width - 1))
@@ -250,7 +249,7 @@ void Hub75Driver::encode_frame(const uint8_t *fb)
     }
 }
 
-void Hub75Driver::set_frame_buffer(const uint8_t *fb_64x32)
+void Hub75Driver::set_frame_buffer(const uint16_t *fb_64x32)
 {
     encode_frame(fb_64x32);
 }

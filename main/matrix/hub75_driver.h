@@ -33,7 +33,7 @@ public:
     static constexpr int _width = 64;
     static constexpr int _height = 32;
     static constexpr int _rows = 16;
-    static constexpr int _row_words = 3 * _width;
+    static constexpr int _row_words = 15 * _width;
     static constexpr int _dma_words = _rows * _row_words;
     static constexpr int _dma_bytes = _dma_words * sizeof(uint16_t);
 
@@ -46,7 +46,7 @@ public:
     bool init();
     void deinit();
 
-    void set_frame_buffer(const uint8_t *fb_64x32);
+    void set_frame_buffer(const uint16_t *fb_64x32);
 
     void start();
     void stop();
@@ -70,7 +70,7 @@ private:
     void configure_gpio();
     bool allocate_dma();
     void build_descriptors();
-    void encode_frame(const uint8_t *fb_64x32);
+    void encode_frame(const uint16_t *fb_64x32);
 
     Hub75DriverConfig _driver_cfg{};
 

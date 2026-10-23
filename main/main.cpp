@@ -31,22 +31,9 @@ extern "C" void app_main(void)
 
     for (int y = 0; y < 32; y++)
     {
-        int c2 = (c++ % 3);
-
         for (int x = 0; x < 64; x++)
         {
-            if (c2 == 0)
-            {
-                hub75.draw_pixel(x, y, 0x30);
-            }
-            else if (c2 == 1)
-            {
-                hub75.draw_pixel(x, y, 0x0C);
-            }
-            else if (c2 == 2)
-            {
-                hub75.draw_pixel(x, y, 0x03);
-            }
+            hub75.draw_pixel(x, y, c++);
         }
     }
 

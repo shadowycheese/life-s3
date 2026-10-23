@@ -90,7 +90,7 @@ public:
     }
 
 private:
-    uint8_t _frame_buffer[PANEL_HEIGHT * PANEL_WIDTH * 2];
+    uint16_t _frame_buffer[PANEL_HEIGHT * PANEL_WIDTH * 2];
     bool _invert = false;
     Hub75Driver *_driver;
 };
