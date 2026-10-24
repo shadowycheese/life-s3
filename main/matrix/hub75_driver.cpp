@@ -17,33 +17,6 @@ static const char *TAG = "HUB75";
 
 Hub75Driver::Hub75Driver() = default;
 
-Hub75Driver::~Hub75Driver()
-{
-    deinit();
-}
-
-void Hub75Driver::deinit()
-{
-    stop();
-    if (_dma_chan)
-    {
-        gdma_disconnect((gdma_channel_handle_t)_dma_chan);
-        gdma_del_channel((gdma_channel_handle_t)_dma_chan);
-        _dma_chan = nullptr;
-    }
-    if (_descriptors)
-    {
-        heap_caps_free(_descriptors);
-        _descriptors = nullptr;
-    }
-    if (_dma_buf)
-    {
-        heap_caps_free(_dma_buf);
-        _dma_buf = nullptr;
-    }
-    periph_module_disable(PERIPH_LCD_CAM_MODULE);
-}
-
 bool Hub75Driver::init()
 {
     Hub75DriverConfig cfg = {
@@ -261,15 +234,4 @@ void Hub75Driver::start()
     gdma_start((gdma_channel_handle_t)_dma_chan, (intptr_t)_descriptors);
     esp_rom_delay_us(100);
     LCD_CAM.lcd_user.lcd_start = 1;
-}
-
-void Hub75Driver::stop()
-{
-    if (!_dma_chan)
-    {
-        return;
-    }
-    LCD_CAM.lcd_user.lcd_start = 0;
-    LCD_CAM.lcd_user.lcd_update = 1;
-    gdma_stop((gdma_channel_handle_t)_dma_chan);
 }

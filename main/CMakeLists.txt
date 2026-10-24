@@ -8,6 +8,7 @@ idf_component_register(SRCS
                         "matrix/"
                         "esp/"
                         "events/"
+                        "simulation/"
                        REQUIRES 
                         driver
                         nvs_flash

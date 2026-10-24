@@ -15,14 +15,35 @@
 #define PIN_LAT GPIO_NUM_8
 
 #define PIN_OE GPIO_NUM_9
-#define PIN_A GPIO_NUM_10
-#define PIN_B GPIO_NUM_11
-#define PIN_C GPIO_NUM_12
-#define PIN_D GPIO_NUM_13
+#define PIN_B GPIO_NUM_10
+#define PIN_A GPIO_NUM_11
+#define PIN_D GPIO_NUM_12
+#define PIN_C GPIO_NUM_13
+
+#define PANEL_WIDTH 64
+#define PANEL_HEIGHT 32
 
 class Hub75Driver
 {
 public:
+    inline int width()
+    {
+        return _width;
+    }
+
+    inline int height()
+    {
+        return _height;
+    }
+
+    Hub75Driver();
+
+    bool init();
+    void start();
+
+    void set_frame_buffer(const uint16_t *fb_64x32);
+
+private:
     struct Hub75DriverConfig
     {
         uint32_t clock_div_num; // PCLK = PLL_F160M / clock_div_num (>= 2)
@@ -30,8 +51,8 @@ public:
         bool swap_byte_order;   // set LCD_CAM lcd_8bits_order if bytes come out swapped
     };
 
-    static constexpr int _width = 64;
-    static constexpr int _height = 32;
+    static constexpr int _width = PANEL_WIDTH;
+    static constexpr int _height = PANEL_HEIGHT;
     static constexpr int _rows = 16;
     static constexpr int _row_words = 15 * _width;
     static constexpr int _dma_words = _rows * _row_words;
@@ -40,18 +61,6 @@ public:
     static constexpr int _oe_start = 0;
     static constexpr int _oe_end = _width - 1;
 
-    Hub75Driver();
-    ~Hub75Driver();
-
-    bool init();
-    void deinit();
-
-    void set_frame_buffer(const uint16_t *fb_64x32);
-
-    void start();
-    void stop();
-
-private:
     enum : uint16_t
     {
         BitR1 = 0,

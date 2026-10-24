@@ -5,20 +5,18 @@
 #include <string.h>
 #include "matrix/hub75_driver.h"
 
-#define PANEL_WIDTH 64
-#define PANEL_HEIGHT 32
-
 #define COL_BLACK 0x00
-#define COL_RED 0x30
-#define COL_GREEN 0x0C
-#define COL_BLUE 0x03
+#define COL_RED 0xF00
+#define COL_GREEN 0x0F0
+#define COL_BLUE 0x00F
 #define COL_CYAN (COL_GREEN | COL_BLUE)
 #define COL_MAGENTA (COL_RED | COL_BLUE)
 #define COL_YELLOW (COL_RED | COL_GREEN)
 #define COL_WHITE (COL_RED | COL_BLUE | COL_GREEN)
-#define COL_ORANGE 0x34
-#define COL_LIGHT_GREY 0x2A
-#define COL_DARK_GREY 0x15
+#define COL_ORANGE 0xF80
+#define COL_LIGHT_GREY 0xCCC
+#define COL_DARK_GREY 0x444
+#define RGB(r, g, b) ((((int)(r) & 0xF) << 8) | (((int)(g) & 0xF) << 4) | ((int)(b) & 0xF))
 
 class Hub75
 {
@@ -28,6 +26,16 @@ public:
         _driver = driver;
 
         clear_screen();
+    }
+
+    inline int width()
+    {
+        return _driver->width();
+    }
+
+    inline int height()
+    {
+        return _driver->height();
     }
 
     void draw_pixel(int16_t x, int16_t y, uint16_t col)
@@ -73,15 +81,6 @@ public:
                 draw_pixel(x + i, y + j, col);
             }
         }
-    }
-
-    inline int16_t width()
-    {
-        return PANEL_WIDTH;
-    }
-    inline int16_t height()
-    {
-        return PANEL_HEIGHT;
     }
 
     void clear_screen()
