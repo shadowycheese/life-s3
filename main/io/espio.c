@@ -1,4 +1,4 @@
-#include "espio.h"
+#include "io/espio.h"
 
 esp_err_t configure_output_pin(gpio_num_t pin)
 {
@@ -31,7 +31,7 @@ esp_err_t configure_input_pin(gpio_num_t pin, gpio_int_type_t interruptType)
 {
     gpio_config_t io_conf = {};
 
-    io_conf.intr_type = GPIO_INTR_POSEDGE;
+    io_conf.intr_type = interruptType;
     io_conf.mode = GPIO_MODE_INPUT;
     io_conf.pin_bit_mask = (1ULL << pin);
     io_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;

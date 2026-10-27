@@ -27,7 +27,9 @@ Mixed          | 0.022   | 0.051
 #include <time.h>
 #include <math.h>
 #include <esp_random.h>
-#include "simulation/sim.h"
+
+#define INITIAL_COUNT (3)
+#define CHANCE_PER_10K (100)
 
 typedef struct
 {
@@ -47,15 +49,15 @@ typedef struct
     uint8_t r, g, b;
 } rgb_t;
 
-class Simulation4 : public Simulation
+class Simulation
 {
 public:
-    Simulation4() {};
-
     void init(int width, int height)
     {
         _width = width;
         _height = height;
+
+        _init_count = INITIAL_COUNT;
 
         int array_size = _width * _height;
 
@@ -70,28 +72,99 @@ public:
             _temp_grid[i] = {.A = 1.0, .B = 0.0};
         }
 
-        _param_index = 8;
+        _chance_index = 4;
+        _param_index = 11;
         _feed_rate = _params[_param_index].feed_rate;
         _kill_rate = _params[_param_index].kill_rate;
 
         srand(esp_random());
-
-        init_palette();
     }
 
-    void simulate(double time)
+    inline int chance_adjust()
     {
-        if ((random() % 1000) == 0)
+        _chance_index = (_chance_index + 1) % 10;
+
+        return _chances[_chance_index];
+    }
+
+    inline int chance()
+    {
+        return _chances[_chance_index];
+    }
+
+    inline float increment_feed_rate(float feed_rate_step)
+    {
+        _feed_rate = increment(_feed_rate, feed_rate_step);
+
+        return _feed_rate;
+    }
+
+    inline float increment_kill_rate(float kill_rate_step)
+    {
+        _kill_rate = increment(_kill_rate, kill_rate_step);
+
+        return _kill_rate;
+    }
+
+    inline float kill_rate()
+    {
+        return _kill_rate;
+    }
+
+    inline float feed_rate()
+    {
+        return _feed_rate;
+    }
+
+    inline float increment(float current, float delta)
+    {
+        current += delta;
+
+        if (current > 0.1f)
         {
-            _param_index = (_param_index + 1) % 15;
-
-            _feed_rate = _params[_param_index].feed_rate;
-            _kill_rate = _params[_param_index].kill_rate;
-
-            ESP_LOGI("SIM", "Changing parameters => F=%0.3f, K=%0.3f [%d]", _feed_rate, _kill_rate, _param_index);
+            current = 0.1f;
+        }
+        else if (current < 0.001f)
+        {
+            current = 0.001f;
         }
 
-        if ((_init_count > 0) || (_weight < 0.10f) || ((random() % 32) == 0))
+        return current;
+    }
+
+    const char *name()
+    {
+        for (int i = 0; i < 15; i++)
+        {
+            if ((_feed_rate == _params[i].feed_rate) && (_kill_rate == _params[i].kill_rate))
+            {
+                return _params[i].name;
+            }
+        }
+
+        return "";
+    }
+
+    int next_preset()
+    {
+        _param_index = (_param_index + 1) % 15;
+
+        _feed_rate = _params[_param_index].feed_rate;
+        _kill_rate = _params[_param_index].kill_rate;
+
+        return _param_index;
+    }
+
+    int add()
+    {
+        _init_count = 1;
+
+        return _param_index;
+    }
+
+    void simulate()
+    {
+        if ((_init_count > 0) || (_weight < -0.10f) || ((random() % 10000) < _chances[_chance_index]))
         {
             int p = random() % (_width * _height);
 
@@ -100,28 +173,37 @@ public:
             _init_count--;
         }
 
-        simulate();
-    }
-
-    inline float grid_level(int x, int y)
-    {
-        return _grid[(y * _width) + x].A;
+        step_simulation();
     }
 
     uint16_t get_colour(int x, int y)
     {
         int p = ap(x, y);
 
-        // float l = (_grid[p].A - _grid[p].B);
-
-        // return 0xFFF - constrain(0xFFF * v, 0, 0xFFF);
-        // uint16_t v2 = 0xFF - constrain(0xFF * l, 0, 0xFF);
-
         float l = constrain(1.0f - (_grid[p].A - _grid[p].B), 0.0f, 1.0f);
+
+        uint32_t v2 = ((int)(0xFFF * l)) & 0xFFF;
+
+        if (v2 == 0)
+        {
+            return 0;
+        }
+
+        int lz = __builtin_clz(v2);
+
+        if (lz >= 28)
+        {
+            return v2;
+        }
+
+        uint32_t mk = (0xFU << (28 - lz));
+        uint16_t v3 = v2 & mk;
+
+        return (uint16_t)v3;
 
         float h = l * 360.0f;
         float s = constrain(l * 2.0f, 0.0f, 1.0f);
-        float v = l / 2.0f;
+        float v = l / 4.0f;
 
         float c = v * s;
         float n = c * (1.0f - fabsf(fmodf(h / 60.0f, 2.0f) - 1.0f));
@@ -166,44 +248,55 @@ public:
             b = n;
         }
 
-        return ((((uint16_t)((r + m) * 31.0f)) << 7) & 0xF) |
-               ((((uint16_t)((g + m) * 31.0f)) << 3) & 0xF) |
-               ((((uint16_t)((b + m) * 31.0f)) >> 1) & 0xF);
+        uint16_t rr = ((uint16_t)((r + m) * 15.0f)) << 8;
+        uint16_t gg = ((uint16_t)((g + m) * 15.0f)) << 4;
+        uint16_t bb = ((uint16_t)((b + m) * 15.0f));
 
-        // float value =  1.0f - (_grid[p].A - _grid[p].B);
-        // int shift = (int)(value * 6.0f);
-        // int colour = ((int)(value * 64.0f)) << shift;
-        //  index &= 0xFF;
+        uint16_t c2 = (rr & 0xF00) | (gg & 0x0F0) | (bb & 0x00F);
 
-        // return colour & 0xFFF;
-
-        // return _palette[index];
+        return c2;
     }
 
 private:
     const parameters_t _params[15] = {
-        {"Mitosos", 0.0367, 0.0649},       // Mitosis
-        {"Coral Growth", 0.0545, 0.062},   // Coral Growth
-        {"Fingerprint", 0.055, 0.062},     // Fingerprint
-        {"Spirals", 0.018, 0.051},         // Spirals
-        {"Worms", 0.078, 0.061},           // Worms
-        {"Maze", 0.029, 0.057},            // Maze
-        {"Bubbles", 0.098, 0.057},         // Bubbles
-        {"Spots and Loops", 0.039, 0.058}, // Spots and Loops
-        {"Waves", 0.014, 0.054},           // Waves
-        {"Splotches", 0.026, 0.051},       // Splotches
-        {"Solitions", 0.03, 0.06},         // Solitions
-        {"Dots", 0.05, 0.065},             // Dots
-        {"Stripes", 0.025, 0.06},          // Stripes
-        {"Cross Waves", 0.012, 0.045},     // Cross Waves
-        {"Mixed", 0.022, 0.051},           // Mixed
+        {"Mitosos", 0.0367, 0.0649}, // Mitosis
+        {"Coral", 0.0545, 0.062},    // Coral Growth
+        {"Fingerpr.", 0.055, 0.062}, // Fingerprint
+        {"Spiral", 0.018, 0.051},    // Spirals
+        {"Worm", 0.078, 0.061},      // Worms
+        {"Maze", 0.029, 0.057},      // Maze
+        {"Bubbles", 0.098, 0.057},   // Bubbles
+        {"Spot/Loop", 0.039, 0.058}, // Spots and Loops
+        {"Waves", 0.014, 0.054},     // Waves
+        {"Splotch", 0.026, 0.051},   // Splotches
+        {"Solition", 0.03, 0.06},    // Solitions
+        {"Dot", 0.05, 0.065},        // Dots
+        {"Stripe", 0.025, 0.06},     // Stripes
+        {"X/Wave", 0.012, 0.045},    // Cross Waves
+        {"Mixed", 0.022, 0.051},     // Mixed
+    };
+
+    const int _chances[10] =
+        {
+            1,
+            10,
+            20,
+            50,
+            100,
+            200,
+            500,
+            1000,
+            2000,
+            5000,
     };
 
     int _width;
     int _height;
-    int _weight;
 
-    int _init_count = 3;
+    int _weight;
+    int _param_index;
+    int _chance_index;
+    int _init_count;
 
     cell_t *_grid;
     cell_t *_temp_grid;
@@ -241,7 +334,7 @@ private:
                         0.05 * (_grid[ap(left, up)].B + _grid[ap(right, up)].B + _grid[ap(left, down)].B + _grid[ap(right, down)].B) - _grid[ap(x, y)].B));
     }
 
-    void simulate(void)
+    void step_simulation()
     {
         for (int x = 0; x < _width; x++)
         {

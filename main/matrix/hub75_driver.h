@@ -15,10 +15,10 @@
 #define PIN_LAT GPIO_NUM_8
 
 #define PIN_OE GPIO_NUM_9
-#define PIN_B GPIO_NUM_10
-#define PIN_A GPIO_NUM_11
-#define PIN_D GPIO_NUM_12
-#define PIN_C GPIO_NUM_13
+#define PIN_A GPIO_NUM_13
+#define PIN_B GPIO_NUM_12
+#define PIN_C GPIO_NUM_11
+#define PIN_D GPIO_NUM_10
 
 #define PANEL_WIDTH 64
 #define PANEL_HEIGHT 32
@@ -26,6 +26,8 @@
 class Hub75Driver
 {
 public:
+    Hub75Driver();
+
     inline int width()
     {
         return _width;
@@ -36,21 +38,12 @@ public:
         return _height;
     }
 
-    Hub75Driver();
-
     bool init();
     void start();
 
     void set_frame_buffer(const uint16_t *fb_64x32);
 
 private:
-    struct Hub75DriverConfig
-    {
-        uint32_t clock_div_num; // PCLK = PLL_F160M / clock_div_num (>= 2)
-        bool clk_invert;        // true if the panel wants inverted CLK polarity
-        bool swap_byte_order;   // set LCD_CAM lcd_8bits_order if bytes come out swapped
-    };
-
     static constexpr int _width = PANEL_WIDTH;
     static constexpr int _height = PANEL_HEIGHT;
     static constexpr int _rows = 16;
@@ -80,8 +73,6 @@ private:
     bool allocate_dma();
     void build_descriptors();
     void encode_frame(const uint16_t *fb_64x32);
-
-    Hub75DriverConfig _driver_cfg{};
 
     void *_dma_chan = nullptr;
     void *_descriptors = nullptr;

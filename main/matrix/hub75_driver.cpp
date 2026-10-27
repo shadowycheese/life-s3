@@ -17,16 +17,10 @@ static const char *TAG = "HUB75";
 
 Hub75Driver::Hub75Driver() = default;
 
+#define CLOCK_DIVIDER (8)
+
 bool Hub75Driver::init()
 {
-    Hub75DriverConfig cfg = {
-        .clock_div_num = 8,
-        .clk_invert = false,
-        .swap_byte_order = false, //
-    };
-
-    _driver_cfg = cfg;
-
     ESP_LOGI(TAG, "Initializing LCD_CAM (I8080 16-bit) + GDMA for HUB75 64x32");
 
     periph_module_enable(PERIPH_LCD_CAM_MODULE);
@@ -76,43 +70,43 @@ bool Hub75Driver::init()
     encode_frame(nullptr); // blank
 
     start();
-    ESP_LOGI(TAG, "Running: %lu Hz clock", (unsigned long)(160000000 / _driver_cfg.clock_div_num));
+    ESP_LOGI(TAG, "Running: %lu Hz clock", (unsigned long)(160000000 / CLOCK_DIVIDER));
 
     return true;
 }
 
 void Hub75Driver::configure_lcd_clock()
 {
-    LCD_CAM.lcd_clock.lcd_clk_sel = 3;     // PLL_F160M source
-    LCD_CAM.lcd_clock.lcd_ck_out_edge = 1; // PCLK low in first half of cycle
-    LCD_CAM.lcd_clock.lcd_ck_idle_edge = _driver_cfg.clk_invert ? 1 : 0;
+    LCD_CAM.lcd_clock.lcd_clk_sel = 3;
+    LCD_CAM.lcd_clock.lcd_ck_out_edge = 1;
+    LCD_CAM.lcd_clock.lcd_ck_idle_edge = 0;
     LCD_CAM.lcd_clock.lcd_clkcnt_n = 1;
-    LCD_CAM.lcd_clock.lcd_clk_equ_sysclk = 1; // integer divider only
-    LCD_CAM.lcd_clock.lcd_clkm_div_num = _driver_cfg.clock_div_num;
+    LCD_CAM.lcd_clock.lcd_clk_equ_sysclk = 1;
+    LCD_CAM.lcd_clock.lcd_clkm_div_num = CLOCK_DIVIDER;
     LCD_CAM.lcd_clock.lcd_clkm_div_a = 1;
     LCD_CAM.lcd_clock.lcd_clkm_div_b = 0;
 }
 
 void Hub75Driver::configure_lcd_mode()
 {
-    LCD_CAM.lcd_ctrl.lcd_rgb_mode_en = 0; // I8080 mode, not RGB/DPI
+    LCD_CAM.lcd_ctrl.lcd_rgb_mode_en = 0;
     LCD_CAM.lcd_rgb_yuv.lcd_conv_bypass = 0;
-    LCD_CAM.lcd_misc.lcd_next_frame_en = 0; // no auto-reframe
+    LCD_CAM.lcd_misc.lcd_next_frame_en = 0;
     LCD_CAM.lcd_misc.lcd_bk_en = 1;
     LCD_CAM.lcd_misc.lcd_vfk_cyclelen = 0;
     LCD_CAM.lcd_misc.lcd_vbk_cyclelen = 0;
     LCD_CAM.lcd_data_dout_mode.val = 0;
 
-    LCD_CAM.lcd_user.lcd_always_out_en = 1; // arbitrary-length continuous mode
-    LCD_CAM.lcd_user.lcd_8bits_order = _driver_cfg.swap_byte_order ? 1 : 0;
+    LCD_CAM.lcd_user.lcd_always_out_en = 1;
+    LCD_CAM.lcd_user.lcd_8bits_order = 0;
     LCD_CAM.lcd_user.lcd_bit_order = 0;
-    LCD_CAM.lcd_user.lcd_2byte_en = 1; // 16-bit bus
+    LCD_CAM.lcd_user.lcd_2byte_en = 1;
     LCD_CAM.lcd_user.lcd_dout = 1;
-    LCD_CAM.lcd_user.lcd_dummy = 1; // dummy phase so DMA triggers reliably
+    LCD_CAM.lcd_user.lcd_dummy = 1;
     LCD_CAM.lcd_user.lcd_dummy_cyclelen = 1;
     LCD_CAM.lcd_user.lcd_cmd = 0;
     LCD_CAM.lcd_user.lcd_start = 0;
-    LCD_CAM.lcd_misc.lcd_afifo_reset = 1; // clear stale TX FIFO
+    LCD_CAM.lcd_misc.lcd_afifo_reset = 1;
 }
 
 void Hub75Driver::configure_gpio()
@@ -143,7 +137,7 @@ void Hub75Driver::configure_gpio()
         gpio_set_drive_capability(m.pin, GPIO_DRIVE_CAP_3);
     }
 
-    esp_rom_gpio_connect_out_signal(PIN_CLK, LCD_PCLK_IDX, _driver_cfg.clk_invert, false);
+    esp_rom_gpio_connect_out_signal(PIN_CLK, LCD_PCLK_IDX, false, false);
     gpio_func_sel(PIN_CLK, PIN_FUNC_GPIO);
     gpio_set_drive_capability(PIN_CLK, GPIO_DRIVE_CAP_3);
 }
