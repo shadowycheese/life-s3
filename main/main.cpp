@@ -10,6 +10,8 @@
 #include "simulation/simulation.h"
 #include "io/encoder.h"
 #include <esp_timer.h>
+#include "nvs_flash.h"
+#include "nvs.h"
 
 Hub75Driver hub75_driver;
 Display display(&hub75_driver);
@@ -17,10 +19,117 @@ Simulation sim;
 RotaryEncoders encoders;
 uint64_t overlay_expiry;
 bool preset_changed;
+uint64_t save_configuration_time;
+
+const char *APP_TAG = "APP";
 
 #define TICK_SIZE (10)
 
 #define OVERLAY_TIME (3LL * 1000LL * 1000LL)
+#define CONFIGURATION_SAVE_DELAY (20LL * 1000LL * 1000LL)
+
+esp_err_t save_configuration(const sim_configuration_t *config)
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("settings", NVS_READWRITE, &handle);
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    err = nvs_set_blob(handle, "config", config, sizeof(sim_configuration_t));
+
+    if (err == ESP_OK)
+    {
+        err = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+    return err;
+}
+
+esp_err_t load_configuration(sim_configuration_t *config)
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("settings", NVS_READONLY, &handle);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    size_t size = sizeof(sim_configuration_t);
+    err = nvs_get_blob(handle, "config", config, &size);
+
+    nvs_close(handle);
+    return err;
+}
+
+void sim_configuration_writer(void *)
+{
+    for (;;)
+    {
+        uint64_t time = esp_timer_get_time();
+
+        if (save_configuration_time > 0 && save_configuration_time < time)
+        {
+            save_configuration_time = 0;
+
+            sim_configuration_t config;
+
+            sim.get_configuration(&config);
+
+            esp_err_t err = save_configuration(&config);
+
+            if (err == ESP_OK)
+            {
+                ESP_LOGI(APP_TAG, "Saved config: Feed rate: %0.5f, Kill rate: %0.5f, Seed chance: %d", config.feed_rate, config.kill_rate, config.seed_chance);
+            }
+            else
+            {
+                ESP_LOGW(APP_TAG, "Failed to save config: %d", err);
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+
+void sim_configuration_init()
+{
+    sim_configuration_t config;
+
+    esp_err_t err = load_configuration(&config);
+
+    if (err == ESP_OK)
+    {
+        if (config.magic != SIM_CONFIG_MAGIC)
+        {
+            ESP_LOGE(APP_TAG, "Loaded config, but wrong magic: %08X [expected %08X]", config.magic, SIM_CONFIG_MAGIC);
+        }
+        else
+        {
+            ESP_LOGI(APP_TAG, "Loaded config: Feed rate: %0.5f, Kill rate: %0.5f, Seed chance: %d", config.feed_rate, config.kill_rate, config.seed_chance);
+
+            sim.set_configuration(&config);
+        }
+    }
+    else
+    {
+        ESP_LOGW(APP_TAG, "Failed to load config: %d", err);
+    }
+
+    save_configuration_time = 0;
+
+    xTaskCreatePinnedToCore(
+        sim_configuration_writer,
+        "sim_config_writer",
+        2048,
+        NULL,
+        5,
+        NULL,
+        1);
+}
 
 void check_encoders(uint64_t now)
 {
@@ -30,9 +139,10 @@ void check_encoders(uint64_t now)
     {
         float fr = sim.increment_feed_rate(((float)feed_delta) / 10000.0f);
 
-        printf("Feed Rate %d [%0.4f]\n", feed_delta, fr);
+        ESP_LOGI(APP_TAG, "Feed Rate %d [%0.4f]", feed_delta, fr);
 
         overlay_expiry = now + OVERLAY_TIME;
+        save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
     }
 
     int kill_delta = encoders.get_and_reset_kill_rate();
@@ -41,9 +151,10 @@ void check_encoders(uint64_t now)
     {
         float fr = sim.increment_kill_rate(((float)kill_delta) / 10000.0f);
 
-        printf("Kill Rate %d [%0.4f]\n", feed_delta, fr);
+        ESP_LOGI(APP_TAG, "Kill Rate %d [%0.4f]", feed_delta, fr);
 
         overlay_expiry = now + OVERLAY_TIME;
+        save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
     }
 
     click_type_t feed_click = encoders.is_feed_rate_clicked(now);
@@ -54,9 +165,10 @@ void check_encoders(uint64_t now)
 
         int preset = sim.next_preset();
 
-        printf("Select next preset: %d\n", preset);
+        ESP_LOGI(APP_TAG, "Select next preset: %d", preset);
 
         overlay_expiry = now + OVERLAY_TIME;
+        save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
     }
     else if (feed_click == BUTTON_HELD)
     {
@@ -71,15 +183,19 @@ void check_encoders(uint64_t now)
 
         int chance = sim.chance_adjust();
 
-        printf("Select next chance: %d\n", chance);
+        ESP_LOGI(APP_TAG, "Select next chance: %d", chance);
 
         preset_changed = false;
+        save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
     }
     else if (kill_click == BUTTON_HELD)
     {
-        printf("Restart!\n");
+        if (overlay_expiry < now)
+        {
+            ESP_LOGW(APP_TAG, "Restarting!");
 
-        esp_restart();
+            esp_restart();
+        }
     }
 }
 
@@ -125,7 +241,7 @@ void draw_overlay()
 {
     display.setCursor(2, 2);
     display.setTextSize(0);
-    display.setTextColor(0xFF0);
+    display.setTextColor(0x1FF0);
     display.printf("F:%05.2f%%", sim.feed_rate() * 100.0f);
     display.setCursor(2, 12);
     display.printf("K:%05.2f%%", sim.kill_rate() * 100.0f);
@@ -165,7 +281,11 @@ extern "C" void app_main(void)
 
     sim.init(w, h);
 
-    ESP_LOGI("APP_MAIN", "Running main loop on core %d", xPortGetCoreID());
+    sim_configuration_init();
+
+    overlay_expiry = esp_timer_get_time() + 3000000LL;
+
+    ESP_LOGI(APP_TAG, "Running main loop on core %d", xPortGetCoreID());
 
     for (;;)
     {
@@ -190,6 +310,11 @@ extern "C" void app_main(void)
             draw_overlay();
         }
 
+        if (save_configuration_time > 0)
+        {
+            display.draw_pixel(0, 0, 0x0C0);
+        }
+
         display.commit_frame();
 
         uint64_t t = esp_timer_get_time();
@@ -198,7 +323,7 @@ extern "C" void app_main(void)
 
         if (took > 50000)
         {
-            ESP_LOGW("APP_MAIN", "Simulator loop took too long [%dus]\n", took);
+            ESP_LOGW(APP_TAG, "Simulator loop took too long [%dus]\n", took);
         }
 
         vTaskDelayUntil(&last_wake_time, delay_period);

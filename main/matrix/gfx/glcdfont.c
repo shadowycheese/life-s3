@@ -136,7 +136,8 @@ static const unsigned char font[] PROGMEM = {
 };
 
 // allow clean compilation with [-Wunused-const-variable=] and [-Wall]
-static inline void avoid_unused_const_variable_compiler_warning(void) {
+static inline void avoid_unused_const_variable_compiler_warning(void)
+{
   (void)font;
 }
 

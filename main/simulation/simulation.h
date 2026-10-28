@@ -29,7 +29,16 @@ Mixed          | 0.022   | 0.051
 #include <esp_random.h>
 
 #define INITIAL_COUNT (3)
-#define CHANCE_PER_10K (100)
+
+#define SIM_CONFIG_MAGIC 0xFEEDD1ED
+
+typedef struct
+{
+    float kill_rate;
+    float feed_rate;
+    int32_t seed_chance;
+    int32_t magic;
+} sim_configuration_t;
 
 typedef struct
 {
@@ -80,9 +89,27 @@ public:
         srand(esp_random());
     }
 
+    void set_configuration(sim_configuration_t *config)
+    {
+        if (config->magic == SIM_CONFIG_MAGIC)
+        {
+            _feed_rate = config->feed_rate;
+            _kill_rate = config->kill_rate;
+            _chance_index = config->seed_chance % 22;
+        }
+    }
+
+    void get_configuration(sim_configuration_t *config)
+    {
+        config->feed_rate = _feed_rate;
+        config->kill_rate = _kill_rate;
+        config->seed_chance = _chance_index;
+        config->magic = SIM_CONFIG_MAGIC;
+    }
+
     inline int chance_adjust()
     {
-        _chance_index = (_chance_index + 1) % 10;
+        _chance_index = (_chance_index + 1) % 22;
 
         return _chances[_chance_index];
     }
@@ -176,85 +203,57 @@ public:
         step_simulation();
     }
 
+    uint16_t map_grayscott_rgb444(float val)
+    {
+        // Stage 0: black (background/quiet zone)
+        const float r0 = 0.0f, g0 = 0.0f, b0 = 0.0f;
+        // Stage 1: purple/magenta
+        const float r1 = 6.0f, g1 = 1.0f, b1 = 8.0f;
+        // Stage 2: coral/orange
+        const float r2 = 13.0f, g2 = 4.0f, b2 = 2.0f;
+        // Stage 3: warm highlight / yellow
+        const float r3 = 13.0f, g3 = 12.0f, b3 = 1.0f;
+
+        float r, g, b;
+
+        // 2. Piecewise linear interpolation across 3 segments
+        if (val < 0.333333f)
+        {
+            float f = val * 3.0f;
+            r = r0 + f * (r1 - r0);
+            g = g0 + f * (g1 - g0);
+            b = b0 + f * (b1 - b0);
+        }
+        else if (val < 0.666667f)
+        {
+            float f = (val - 0.333333f) * 3.0f;
+            r = r1 + f * (r2 - r1);
+            g = g1 + f * (g2 - g1);
+            b = b1 + f * (b2 - b1);
+        }
+        else
+        {
+            float f = (val - 0.666667f) * 3.0f;
+            r = r2 + f * (r3 - r2);
+            g = g2 + f * (g3 - g2);
+            b = b2 + f * (b3 - b2);
+        }
+
+        uint16_t r_int = (uint16_t)(r + 0.5f);
+        uint16_t g_int = (uint16_t)(g + 0.5f);
+        uint16_t b_int = (uint16_t)(b + 0.5f);
+
+        return RGB(r_int, g_int, b_int);
+    }
+
     uint16_t get_colour(int x, int y)
     {
         int p = ap(x, y);
 
+        // float l = constrain(1.0f - (_grid[p].A - _grid[p].B), 0.0f, 1.0f);
         float l = constrain(1.0f - (_grid[p].A - _grid[p].B), 0.0f, 1.0f);
 
-        uint32_t v2 = ((int)(0xFFF * l)) & 0xFFF;
-
-        if (v2 == 0)
-        {
-            return 0;
-        }
-
-        int lz = __builtin_clz(v2);
-
-        if (lz >= 28)
-        {
-            return v2;
-        }
-
-        uint32_t mk = (0xFU << (28 - lz));
-        uint16_t v3 = v2 & mk;
-
-        return (uint16_t)v3;
-
-        float h = l * 360.0f;
-        float s = constrain(l * 2.0f, 0.0f, 1.0f);
-        float v = l / 4.0f;
-
-        float c = v * s;
-        float n = c * (1.0f - fabsf(fmodf(h / 60.0f, 2.0f) - 1.0f));
-        float m = v - c;
-
-        float r, g, b;
-
-        if (h < 60)
-        {
-            r = c;
-            g = n;
-            b = 0;
-        }
-        else if (h < 120)
-        {
-            r = n;
-            g = c;
-            b = 0;
-        }
-        else if (h < 180)
-        {
-            r = 0;
-            g = c;
-            b = n;
-        }
-        else if (h < 240)
-        {
-            r = 0;
-            g = n;
-            b = c;
-        }
-        else if (h < 300)
-        {
-            r = n;
-            g = 0;
-            b = c;
-        }
-        else
-        {
-            r = c;
-            g = 0;
-            b = n;
-        }
-
-        uint16_t rr = ((uint16_t)((r + m) * 15.0f)) << 8;
-        uint16_t gg = ((uint16_t)((g + m) * 15.0f)) << 4;
-        uint16_t bb = ((uint16_t)((b + m) * 15.0f));
-
-        uint16_t c2 = (rr & 0xF00) | (gg & 0x0F0) | (bb & 0x00F);
-
-        return c2;
+        return map_grayscott_rgb444(l);
     }
 
 private:
@@ -276,17 +275,29 @@ private:
         {"Mixed", 0.022, 0.051},     // Mixed
     };
 
-    const int _chances[10] =
+    const int _chances[22] =
         {
             1,
             10,
             20,
+            25,
             50,
+            75,
             100,
+            150,
             200,
+            250,
             500,
+            750,
             1000,
+            1250,
+            1500,
+            1750,
             2000,
+            2500,
+            3000,
+            3500,
+            4000,
             5000,
     };
 
@@ -352,20 +363,12 @@ private:
         }
 
         int as = _width * _height;
-        float weight = 0.0f;
 
         for (int i = 0; i < as; i++)
         {
             _grid[i].A = _temp_grid[i].A;
             _grid[i].B = _temp_grid[i].B;
-
-            weight += 1.0 - constrain(_grid[i].A - _grid[i].B, 0, 1);
-
-            _temp_grid[i].A = 1.0f;
-            _temp_grid[i].B = 0.0f;
         }
-
-        _weight = weight;
     }
 };
 #endif

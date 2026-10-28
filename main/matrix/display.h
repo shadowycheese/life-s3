@@ -64,6 +64,14 @@ public:
         x = x & 0x3F;
         y = y & 0x1F;
 
+        if ((col & 0x1000) == 0x1000)
+        {
+            uint16_t c = col & 0xFFF;
+            uint16_t curr = get_pixel(x, y);
+
+            col = c ^ curr;
+        }
+
         _frame_buffer[(y * PANEL_WIDTH) + x] = col;
     }
 
