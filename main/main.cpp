@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include "simulation/simulation.h"
 #include "io/encoder.h"
+#include "io/bluetooth.h"
 #include <esp_timer.h>
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -17,6 +18,7 @@ Hub75Driver hub75_driver;
 Display display(&hub75_driver);
 Simulation sim;
 RotaryEncoders encoders;
+Bluetooth bt;
 uint64_t overlay_expiry;
 bool preset_changed;
 uint64_t save_configuration_time;
@@ -266,7 +268,8 @@ extern "C" void app_main(void)
 {
     nvs_flash_init();
 
-    encoders.init();
+    // encoders.init();
+    bt.init();
 
     hub75_driver.init();
 
@@ -291,7 +294,7 @@ extern "C" void app_main(void)
     {
         uint64_t now = esp_timer_get_time();
 
-        check_encoders(now);
+        // check_encoders(now);
 
         sim.simulate();
 
@@ -312,7 +315,9 @@ extern "C" void app_main(void)
 
         if (save_configuration_time > 0)
         {
-            display.draw_pixel(0, 0, 0x0C0);
+            display.draw_pixel(61, 31, 0x0C00);
+            display.draw_pixel(62, 31, 0x00C0);
+            display.draw_pixel(63, 31, 0x000C);
         }
 
         display.commit_frame();

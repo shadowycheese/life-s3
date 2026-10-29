@@ -210,7 +210,7 @@ public:
         // Stage 1: purple/magenta
         const float r1 = 6.0f, g1 = 1.0f, b1 = 8.0f;
         // Stage 2: coral/orange
-        const float r2 = 13.0f, g2 = 4.0f, b2 = 2.0f;
+        const float r2 = 11.0f, g2 = 3.0f, b2 = 2.0f;
         // Stage 3: warm highlight / yellow
         const float r3 = 13.0f, g3 = 12.0f, b3 = 1.0f;
 

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrix Controller</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .card {
+            background-color: #1e1e1e;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 360px;
+            text-align: center;
+        }
+        button {
+            background-color: #007aff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 20px;
+            transition: background 0.2s;
+        }
+        button:active { background-color: #0056b3; }
+        .control-group {
+            margin: 25px 0;
+            text-align: left;
+        }
+        label {
+            display: block;
+            font-size: 14px;
+            color: #aaaaaa;
+            margin-bottom: 8px;
+        }
+        input[type=range] {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #333;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .btn-row {
+            display: flex;
+            gap: 10px;
+        }
+        .btn-secondary {
+            background-color: #333333;
+            margin-bottom: 0;
+        }
+        .btn-secondary:active { background-color: #444444; }
+        #status { font-size: 12px; color: #888; margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Matrix Remote</h2>
+    <button id="connectBtn" onclick="connectBLE()">Connect to Matrix</button>
+    
+    <div class="control-group">
+        <label id="brightLabel">Brightness: 32</label>
+        <input type="range" id="brightSlider" min="0" max="63" value="32" oninput="updateBrightness(this.value)" disabled>
+    </div>
+
+    <div class="control-group">
+        <label>Animation Mode</label>
+        <div class="btn-row">
+            <button class="btn-secondary" id="prevBtn" onclick="sendMode('P')" disabled>Previous</button>
+            <button class="btn-secondary" id="nextBtn" onclick="sendMode('N')" disabled>Next</button>
+        </div>
+    </div>
+
+    <p id="status">Status: Disconnected</p>
+</div>
+
+<script>
+let bleDevice = null;
+let controlCharacteristic = null;
+
+// Use the exact 128-bit UUID strings matching your S3 NimBLE configuration
+const SERVICE_UUID = '41424344-4546-4748-494a-4b4c4d4e4f50'; 
+const CHARACTERISTIC_UUID = '51525354-5556-5758-595a-5b5c5d5e5f60';
+
+async function connectBLE() {
+    const statusText = document.getElementById('status');
+    statusText.innerText = "Status: Scanning...";
+    
+    try {
+        bleDevice = await navigator.bluetooth.requestDevice({
+            filters: [{ name: 'Matrix-Remote' }],
+            optionalServices: [SERVICE_UUID]
+        });
+
+        statusText.innerText = "Status: Connecting...";
+        const server = await bleDevice.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        controlCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+        statusText.innerText = "Status: Connected!";
+        document.getElementById('connectBtn').style.backgroundColor = "#34c759";
+        document.getElementById('connectBtn').innerText = "Connected";
+        
+        // Enable UI Controls
+        document.getElementById('brightSlider').disabled = false;
+        document.getElementById('prevBtn').disabled = false;
+        document.getElementById('nextBtn').disabled = false;
+
+        bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+    } catch (error) {
+        console.error(error);
+        statusText.innerText = "Status: Connection Failed";
+    }
+}
+
+function onDisconnected() {
+    document.getElementById('status').innerText = "Status: Disconnected";
+    document.getElementById('connectBtn').style.backgroundColor = "#007aff";
+    document.getElementById('connectBtn').innerText = "Connect to Matrix";
+    document.getElementById('brightSlider').disabled = true;
+    document.getElementById('prevBtn').disabled = true;
+    document.getElementById('nextBtn').disabled = true;
+}
+
+async function updateBrightness(val) {
+    document.getElementById('brightLabel').innerText = `Brightness: ${val}`;
+    if (!controlCharacteristic) return;
+    
+    // Package command: 'B' character (0x42) followed by the raw 0-63 value byte
+    let data = new Uint8Array([0x42, parseInt(val)]);
+    try {
+        await controlCharacteristic.writeValueWithoutResponse(data);
+    } catch (error) { console.error("Write error:", error); }
+}
+
+async function sendMode(action) {
+    if (!controlCharacteristic) return;
+    
+    // Package command: 'M' character (0x4D) followed by 'N' (Next) or 'P' (Prev)
+    let data = new Uint8Array([0x4D, action.charCodeAt(0)]);
+    try {
+        await controlCharacteristic.writeValueWithoutResponse(data);
+    } catch (error) { console.error("Write error:", error); }
+}
+</script>
+</body>
+</html>

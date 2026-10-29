@@ -4,6 +4,7 @@ idf_component_register(SRCS
                         "matrix/gfx/Adafruit_GFX.cpp"
                         "io/espio.c"
                         "io/encoder.cpp"
+                        "io/bluetooth.cpp"
                        INCLUDE_DIRS 
                         "."
                         "matrix/"
@@ -12,6 +13,7 @@ idf_component_register(SRCS
                         "simulation/"
                        REQUIRES 
                         driver
+                        bt
                         nvs_flash
                         esp_timer
                         esp_lcd)
