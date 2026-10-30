@@ -17,7 +17,7 @@ static const char *TAG = "HUB75";
 
 Hub75Driver::Hub75Driver() = default;
 
-#define CLOCK_DIVIDER (8)
+#define CLOCK_DIVIDER (32)
 
 bool Hub75Driver::init()
 {
@@ -144,14 +144,18 @@ void Hub75Driver::configure_gpio()
 
 bool Hub75Driver::allocate_dma()
 {
-    _dma_buf = (uint16_t *)heap_caps_aligned_alloc(4, _dma_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    size_t dma_bytes = round32(_dma_bytes);
+
+    _dma_buf = (uint16_t *)heap_caps_aligned_alloc(32, dma_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     if (!_dma_buf)
     {
         ESP_LOGE(TAG, "no DMA buffer memory (%d bytes)", _dma_bytes);
         return false;
     }
 
-    _descriptors = heap_caps_aligned_calloc(16, _rows, sizeof(dma_descriptor_t), MALLOC_CAP_DMA);
+    size_t descriptor_bytes = round32(_rows * sizeof(dma_descriptor_t));
+
+    _descriptors = heap_caps_aligned_alloc(32, descriptor_bytes, MALLOC_CAP_DMA);
     if (!_descriptors)
     {
         ESP_LOGE(TAG, "no descriptor memory");

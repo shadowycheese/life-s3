@@ -82,7 +82,7 @@ public:
 
     void clear_screen()
     {
-        memset(&_frame_buffer[0], 0, _width * _height);
+        memset(&_frame_buffer[0], 0, 2 * _width * _height);
     }
 
 private:

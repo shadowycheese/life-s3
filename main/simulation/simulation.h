@@ -36,7 +36,7 @@ typedef struct
 {
     float kill_rate;
     float feed_rate;
-    int32_t seed_chance;
+    int32_t spawn_chance;
     int32_t magic;
 } sim_configuration_t;
 
@@ -45,7 +45,7 @@ typedef struct
     char name[20];
     float feed_rate;
     float kill_rate;
-} parameters_t;
+} sim_preset_t;
 
 typedef struct
 {
@@ -66,8 +66,6 @@ public:
         _width = width;
         _height = height;
 
-        _init_count = INITIAL_COUNT;
-
         int array_size = _width * _height;
 
         size_t grid_bytes = sizeof(cell_t) * array_size;
@@ -75,16 +73,12 @@ public:
         _grid = (cell_t *)(void *)heap_caps_aligned_alloc(4, grid_bytes, MALLOC_CAP_INTERNAL);
         _temp_grid = (cell_t *)(void *)heap_caps_aligned_alloc(4, grid_bytes, MALLOC_CAP_INTERNAL);
 
-        for (int i = 0; i < array_size; i++)
-        {
-            _grid[i] = {.A = 1.0, .B = 0.0};
-            _temp_grid[i] = {.A = 1.0, .B = 0.0};
-        }
+        reset();
 
-        _chance_index = 4;
-        _param_index = 11;
-        _feed_rate = _params[_param_index].feed_rate;
-        _kill_rate = _params[_param_index].kill_rate;
+        _spawn_chance = 100;
+
+        _feed_rate = _presets[11].feed_rate;
+        _kill_rate = _presets[11].kill_rate;
 
         srand(esp_random());
     }
@@ -95,7 +89,7 @@ public:
         {
             _feed_rate = config->feed_rate;
             _kill_rate = config->kill_rate;
-            _chance_index = config->seed_chance % 22;
+            _spawn_chance = config->spawn_chance;
         }
     }
 
@@ -103,32 +97,32 @@ public:
     {
         config->feed_rate = _feed_rate;
         config->kill_rate = _kill_rate;
-        config->seed_chance = _chance_index;
+        config->spawn_chance = _spawn_chance;
         config->magic = SIM_CONFIG_MAGIC;
     }
 
-    inline int chance_adjust()
+    inline int spawn_chance()
     {
-        _chance_index = (_chance_index + 1) % 22;
-
-        return _chances[_chance_index];
+        return _spawn_chance;
     }
 
-    inline int chance()
+    inline int set_spawn_chance(int spawn_chance)
     {
-        return _chances[_chance_index];
+        _spawn_chance = spawn_chance;
+
+        return _spawn_chance;
     }
 
-    inline float increment_feed_rate(float feed_rate_step)
+    inline float set_feed_rate(float feed_rate)
     {
-        _feed_rate = increment(_feed_rate, feed_rate_step);
+        _feed_rate = constrain(feed_rate, 0.0, 1.0);
 
         return _feed_rate;
     }
 
-    inline float increment_kill_rate(float kill_rate_step)
+    inline float set_kill_rate(float kill_rate)
     {
-        _kill_rate = increment(_kill_rate, kill_rate_step);
+        _kill_rate = constrain(kill_rate, 0.0, 1.0);
 
         return _kill_rate;
     }
@@ -143,76 +137,116 @@ public:
         return _feed_rate;
     }
 
-    inline float increment(float current, float delta)
+    inline void add(int16_t count)
     {
-        current += delta;
+        _init_count += count;
+    }
 
-        if (current > 0.1f)
-        {
-            current = 0.1f;
-        }
-        else if (current < 0.001f)
-        {
-            current = 0.001f;
-        }
+    void reset()
+    {
+        int array_size = _width * _height;
 
-        return current;
+        _init_count = INITIAL_COUNT;
+
+        for (int i = 0; i < array_size; i++)
+        {
+            _grid[i] = {.A = 1.0, .B = 0.0};
+            _temp_grid[i] = {.A = 1.0, .B = 0.0};
+        }
     }
 
     const char *name()
     {
         for (int i = 0; i < 15; i++)
         {
-            if ((_feed_rate == _params[i].feed_rate) && (_kill_rate == _params[i].kill_rate))
+            if ((_feed_rate == _presets[i].feed_rate) && (_kill_rate == _presets[i].kill_rate))
             {
-                return _params[i].name;
+                return _presets[i].name;
             }
         }
 
         return "";
     }
 
-    int next_preset()
+    void set_preset(int preset)
     {
-        _param_index = (_param_index + 1) % 15;
+        preset = (preset) % 15;
 
-        _feed_rate = _params[_param_index].feed_rate;
-        _kill_rate = _params[_param_index].kill_rate;
-
-        return _param_index;
-    }
-
-    int add()
-    {
-        _init_count = 1;
-
-        return _param_index;
+        _feed_rate = _presets[preset].feed_rate;
+        _kill_rate = _presets[preset].kill_rate;
     }
 
     void simulate()
     {
-        if ((_init_count > 0) || (_weight < -0.10f) || ((random() % 10000) < _chances[_chance_index]))
+        if (_init_count > 0)
         {
-            int p = random() % (_width * _height);
-
-            _grid[p].B = 1.0f;
+            spawn();
 
             _init_count--;
+        }
+        else if ((random() % 10000) < _spawn_chance)
+        {
+            spawn();
         }
 
         step_simulation();
     }
 
+    uint16_t get_colour(int x, int y)
+    {
+        int p = ap(x, y);
+
+        float l = constrain(1.0f - (_grid[p].A - _grid[p].B), 0.0f, 1.0f);
+
+        return map_grayscott_rgb444(l);
+    }
+
+private:
+    const sim_preset_t _presets[15] = {
+        {"Mitosos", 0.0367, 0.0649}, // Mitosis
+        {"Coral", 0.0545, 0.062},    // Coral Growth
+        {"Fingerpr.", 0.055, 0.062}, // Fingerprint
+        {"Spiral", 0.018, 0.051},    // Spirals
+        {"Worm", 0.078, 0.061},      // Worms
+        {"Maze", 0.029, 0.057},      // Maze
+        {"Bubbles", 0.098, 0.057},   // Bubbles
+        {"Spot/Loop", 0.039, 0.058}, // Spots and Loops
+        {"Waves", 0.014, 0.054},     // Waves
+        {"Splotch", 0.026, 0.051},   // Splotches
+        {"Solition", 0.03, 0.06},    // Solitions
+        {"Dot", 0.05, 0.065},        // Dots
+        {"Stripe", 0.025, 0.06},     // Stripes
+        {"X/Wave", 0.012, 0.045},    // Cross Waves
+        {"Mixed", 0.022, 0.051},     // Mixed
+    };
+
+    int _width;
+    int _height;
+
+    int _param_index;
+    int _init_count;
+
+    cell_t *_grid;
+    cell_t *_temp_grid;
+
+    float _D_A = 1.0;
+    float _D_B = 0.5;
+    float _feed_rate;
+    float _kill_rate;
+    int16_t _spawn_chance;
+
     uint16_t map_grayscott_rgb444(float val)
     {
+        // Stage 0: black (background/quiet zone)
+        // const float r0 = 0.0f, g0 = 0.0f, b0 = 0.0f;
         // Stage 0: black (background/quiet zone)
         const float r0 = 0.0f, g0 = 0.0f, b0 = 0.0f;
         // Stage 1: purple/magenta
         const float r1 = 6.0f, g1 = 1.0f, b1 = 8.0f;
         // Stage 2: coral/orange
-        const float r2 = 11.0f, g2 = 3.0f, b2 = 2.0f;
+        const float r2 = 8.0f, g2 = 4.0f, b2 = 2.0f;
         // Stage 3: warm highlight / yellow
-        const float r3 = 13.0f, g3 = 12.0f, b3 = 1.0f;
+        const float r3 = 9.0f, g3 = 8.0f, b3 = 1.0f;
 
         float r, g, b;
 
@@ -246,76 +280,10 @@ public:
         return RGB(r_int, g_int, b_int);
     }
 
-    uint16_t get_colour(int x, int y)
+    inline void spawn()
     {
-        int p = ap(x, y);
-
-        // float l = constrain(1.0f - (_grid[p].A - _grid[p].B), 0.0f, 1.0f);
-        float l = constrain(1.0f - (_grid[p].A - _grid[p].B), 0.0f, 1.0f);
-
-        return map_grayscott_rgb444(l);
+        _grid[random() % (_width * _height)].B = 1.0f;
     }
-
-private:
-    const parameters_t _params[15] = {
-        {"Mitosos", 0.0367, 0.0649}, // Mitosis
-        {"Coral", 0.0545, 0.062},    // Coral Growth
-        {"Fingerpr.", 0.055, 0.062}, // Fingerprint
-        {"Spiral", 0.018, 0.051},    // Spirals
-        {"Worm", 0.078, 0.061},      // Worms
-        {"Maze", 0.029, 0.057},      // Maze
-        {"Bubbles", 0.098, 0.057},   // Bubbles
-        {"Spot/Loop", 0.039, 0.058}, // Spots and Loops
-        {"Waves", 0.014, 0.054},     // Waves
-        {"Splotch", 0.026, 0.051},   // Splotches
-        {"Solition", 0.03, 0.06},    // Solitions
-        {"Dot", 0.05, 0.065},        // Dots
-        {"Stripe", 0.025, 0.06},     // Stripes
-        {"X/Wave", 0.012, 0.045},    // Cross Waves
-        {"Mixed", 0.022, 0.051},     // Mixed
-    };
-
-    const int _chances[22] =
-        {
-            1,
-            10,
-            20,
-            25,
-            50,
-            75,
-            100,
-            150,
-            200,
-            250,
-            500,
-            750,
-            1000,
-            1250,
-            1500,
-            1750,
-            2000,
-            2500,
-            3000,
-            3500,
-            4000,
-            5000,
-    };
-
-    int _width;
-    int _height;
-
-    int _weight;
-    int _param_index;
-    int _chance_index;
-    int _init_count;
-
-    cell_t *_grid;
-    cell_t *_temp_grid;
-
-    float _D_A = 1.0;
-    float _D_B = 0.5;
-    float _feed_rate;
-    float _kill_rate;
 
     inline int ap(int x, int y)
     {

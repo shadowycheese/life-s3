@@ -8,7 +8,6 @@
 #include "nvs.h"
 #include <stdio.h>
 #include "simulation/simulation.h"
-#include "io/encoder.h"
 #include "io/bluetooth.h"
 #include <esp_timer.h>
 #include "nvs_flash.h"
@@ -17,7 +16,6 @@
 Hub75Driver hub75_driver;
 Display display(&hub75_driver);
 Simulation sim;
-RotaryEncoders encoders;
 Bluetooth bt;
 uint64_t overlay_expiry;
 bool preset_changed;
@@ -85,7 +83,7 @@ void sim_configuration_writer(void *)
 
             if (err == ESP_OK)
             {
-                ESP_LOGI(APP_TAG, "Saved config: Feed rate: %0.5f, Kill rate: %0.5f, Seed chance: %d", config.feed_rate, config.kill_rate, config.seed_chance);
+                ESP_LOGI(APP_TAG, "Saved config: Feed rate: %0.5f, Kill rate: %0.5f, Spawn chance: %d", config.feed_rate, config.kill_rate, config.spawn_chance);
             }
             else
             {
@@ -111,7 +109,7 @@ void sim_configuration_init()
         }
         else
         {
-            ESP_LOGI(APP_TAG, "Loaded config: Feed rate: %0.5f, Kill rate: %0.5f, Seed chance: %d", config.feed_rate, config.kill_rate, config.seed_chance);
+            ESP_LOGI(APP_TAG, "Loaded config: Feed rate: %0.5f, Kill rate: %0.5f, Spawn chance: %d", config.feed_rate, config.kill_rate, config.spawn_chance);
 
             sim.set_configuration(&config);
         }
@@ -128,115 +126,80 @@ void sim_configuration_init()
         "sim_config_writer",
         2048,
         NULL,
-        5,
+        1,
         NULL,
         1);
 }
 
-void check_encoders(uint64_t now)
+void check_bt(uint64_t now)
 {
-    int feed_delta = encoders.get_and_reset_feed_rate();
+    int16_t value;
 
-    if (feed_delta != 0)
+    if (bt.feed_rate_updated(&value))
     {
-        float fr = sim.increment_feed_rate(((float)feed_delta) / 10000.0f);
+        float v = value / 100000.0f;
 
-        ESP_LOGI(APP_TAG, "Feed Rate %d [%0.4f]", feed_delta, fr);
+        sim.set_feed_rate(v);
+
+        ESP_LOGI(APP_TAG, "Feed Rate: [%d] %0.4f%%", value, v);
 
         overlay_expiry = now + OVERLAY_TIME;
         save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
     }
 
-    int kill_delta = encoders.get_and_reset_kill_rate();
-
-    if (kill_delta != 0)
+    if (bt.kill_rate_updated(&value))
     {
-        float fr = sim.increment_kill_rate(((float)kill_delta) / 10000.0f);
+        float v = value / 100000.0f;
 
-        ESP_LOGI(APP_TAG, "Kill Rate %d [%0.4f]", feed_delta, fr);
+        sim.set_kill_rate(v);
+
+        ESP_LOGI(APP_TAG, "Kill Rate: [%d] %0.4f%%", value, v);
 
         overlay_expiry = now + OVERLAY_TIME;
         save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
     }
 
-    click_type_t feed_click = encoders.is_feed_rate_clicked(now);
-
-    if (feed_click == BUTTON_CLICKED)
+    if (bt.spawn_chance_updated(&value))
     {
-        preset_changed = true;
+        sim.set_spawn_chance(value);
 
-        int preset = sim.next_preset();
-
-        ESP_LOGI(APP_TAG, "Select next preset: %d", preset);
+        ESP_LOGI(APP_TAG, "Spawn Chance: [%d] %0.2f", value, value / 100.0f);
 
         overlay_expiry = now + OVERLAY_TIME;
         save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
-    }
-    else if (feed_click == BUTTON_HELD)
-    {
-        sim.add();
-    }
-
-    click_type_t kill_click = encoders.is_kill_rate_clicked(now);
-
-    if (kill_click == BUTTON_CLICKED)
-    {
-        overlay_expiry = now + OVERLAY_TIME;
-
-        int chance = sim.chance_adjust();
-
-        ESP_LOGI(APP_TAG, "Select next chance: %d", chance);
-
         preset_changed = false;
+    }
+
+    if (bt.preset_updated(&value))
+    {
+        sim.set_preset(value);
+
+        ESP_LOGI(APP_TAG, "Selected Preset: %d", value);
+
+        overlay_expiry = now + OVERLAY_TIME;
+        save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
+        preset_changed = true;
+    }
+
+    if (bt.add_command(&value))
+    {
+        sim.add(value);
+
+        ESP_LOGI(APP_TAG, "Added: %d", value);
+
+        overlay_expiry = now + OVERLAY_TIME;
         save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
     }
-    else if (kill_click == BUTTON_HELD)
+
+    if (bt.reset_command())
     {
-        if (overlay_expiry < now)
-        {
-            ESP_LOGW(APP_TAG, "Restarting!");
+        sim.reset();
 
-            esp_restart();
-        }
+        ESP_LOGI(APP_TAG, "Reset");
+
+        overlay_expiry = now + OVERLAY_TIME;
+        save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
     }
-}
-
-void debug()
-{
-    static int p = 0;
-    static uint64_t t;
-
-    uint64_t t2 = esp_timer_get_time();
-
-    if ((t2 - t) > 100000)
-    {
-        vTaskDelay(2);
-
-        t = t2;
-    }
-
-    int p17 = gpio_get_level(GPIO_NUM_17);
-    int p21 = gpio_get_level(GPIO_NUM_21);
-    int p47 = gpio_get_level(GPIO_NUM_47);
-
-    int p2 = (p17 << 2) + (p21 << 1) + (p47);
-
-    if (p2 != p)
-    {
-        printf("17=%d 21=%d 47=%d\n", p17, p21, p47);
-    }
-
-    p = p2;
-}
-
-uint32_t dbg_pixels[128] = {0};
-int dbg_pos = 0;
-
-void debug_pixel(int id, int x, int y, int c)
-{
-    int val = (x << 24) | (y << 16) | c;
-
-    dbg_pixels[id] = val;
 }
 
 void draw_overlay()
@@ -261,19 +224,20 @@ void draw_overlay()
         }
     }
 
-    display.printf("C:%05.2f%%", sim.chance() / 100.0f);
+    display.printf("S:%05.2f%%", sim.spawn_chance() / 100.0f);
 }
 
-extern "C" void app_main(void)
+void clear_screen(int active)
 {
-    nvs_flash_init();
+    if (active)
+    {
+        display.clear_screen();
+    }
+}
 
-    // encoders.init();
-    bt.init();
-
-    hub75_driver.init();
-
-    display.init();
+void sim_task(void *)
+{
+    ESP_LOGI(APP_TAG, "Running main loop on core %d", xPortGetCoreID());
 
     const TickType_t delay_period = pdMS_TO_TICKS(TICK_SIZE * 5);
 
@@ -282,29 +246,42 @@ extern "C" void app_main(void)
     int w = display.width();
     int h = display.height();
 
-    sim.init(w, h);
-
-    sim_configuration_init();
-
-    overlay_expiry = esp_timer_get_time() + 3000000LL;
-
-    ESP_LOGI(APP_TAG, "Running main loop on core %d", xPortGetCoreID());
-
-    for (;;)
+    for (int i = 0;; i++)
     {
         uint64_t now = esp_timer_get_time();
 
-        // check_encoders(now);
+        check_bt(now);
 
         sim.simulate();
 
-        for (int y = 0; y < h; y++)
+        if (false) // bt.active())
         {
-            for (int x = 0; x < w; x++)
-            {
-                uint16_t c = sim.get_colour(x, y);
+            display.clear_screen();
 
-                display.draw_pixel(x, y, c);
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = y % 2; x < w; x += 2)
+                {
+                    uint16_t c = sim.get_colour(x, y);
+
+                    display.draw_pixel(x, y, c);
+                }
+            }
+        }
+        else
+        {
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    uint16_t c = sim.get_colour(x, y);
+
+                    // display.draw_pixel(x, y, c);
+                    // display.draw_pixel(x, y, 0xF00 & c);
+                    //  display.draw_pixel(x, y, 0xF00 & ((((rand()) % 12) + 4) << 8));
+
+                    display.draw_pixel(x, y, 0xFFF & c);
+                }
             }
         }
 
@@ -333,4 +310,28 @@ extern "C" void app_main(void)
 
         vTaskDelayUntil(&last_wake_time, delay_period);
     }
+}
+
+extern "C" void app_main(void)
+{
+    nvs_flash_init();
+
+    bt.init(clear_screen);
+
+    hub75_driver.init();
+
+    display.init();
+
+    const TickType_t delay_period = pdMS_TO_TICKS(TICK_SIZE * 5);
+
+    int w = display.width();
+    int h = display.height();
+
+    sim.init(w, h);
+
+    sim_configuration_init();
+
+    overlay_expiry = esp_timer_get_time() + 3000000LL;
+
+    xTaskCreatePinnedToCore(sim_task, "sim_task", 4096, NULL, 5, NULL, 1);
 }

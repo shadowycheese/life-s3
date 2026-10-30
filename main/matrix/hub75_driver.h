@@ -67,6 +67,18 @@ private:
         BitOE = 12,
     };
 
+    inline size_t round32(size_t size)
+    {
+        size_t mod = size % 32;
+
+        if (mod == 0)
+        {
+            return size;
+        }
+
+        return size + (32 - mod);
+    }
+
     void configure_lcd_clock();
     void configure_lcd_mode();
     void configure_gpio();
