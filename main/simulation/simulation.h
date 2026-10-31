@@ -27,18 +27,9 @@ Mixed          | 0.022   | 0.051
 #include <time.h>
 #include <math.h>
 #include <esp_random.h>
+#include "simulation/sim_model.h"
 
 #define INITIAL_COUNT (3)
-
-#define SIM_CONFIG_MAGIC 0xFEEDD1ED
-
-typedef struct
-{
-    float kill_rate;
-    float feed_rate;
-    int32_t spawn_chance;
-    int32_t magic;
-} sim_configuration_t;
 
 typedef struct
 {
@@ -168,6 +159,19 @@ public:
         return "";
     }
 
+    int16_t preset()
+    {
+        for (int i = 0; i < 15; i++)
+        {
+            if ((_feed_rate == _presets[i].feed_rate) && (_kill_rate == _presets[i].kill_rate))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
     void set_preset(int preset)
     {
         preset = (preset) % 15;
@@ -235,42 +239,70 @@ private:
     float _kill_rate;
     int16_t _spawn_chance;
 
+#define BAND_0 (0.20f)
+#define BAND_1 (0.30f)
+#define BAND_2 (0.95f)
+#define BAND_3 (1.00f)
+
+    float interp(float from, float to, float val)
+    {
+        if (from == to)
+        {
+            return 0.0f;
+        }
+        else if (from > to)
+        {
+            return (from - ((from - to) * val));
+        }
+        else
+        {
+            return (from + ((to - from) * val));
+        }
+    }
+
     uint16_t map_grayscott_rgb444(float val)
     {
         // Stage 0: black (background/quiet zone)
-        // const float r0 = 0.0f, g0 = 0.0f, b0 = 0.0f;
-        // Stage 0: black (background/quiet zone)
         const float r0 = 0.0f, g0 = 0.0f, b0 = 0.0f;
+        // Stage 0: blue/green (light zone/quiet zone)
+        const float r1 = 0.0f, g1 = 2.5f, b1 = 3.5f;
         // Stage 1: purple/magenta
-        const float r1 = 6.0f, g1 = 1.0f, b1 = 8.0f;
+        const float r2 = 4.0f, g2 = 0.0f, b2 = 4.0f;
         // Stage 2: coral/orange
-        const float r2 = 8.0f, g2 = 4.0f, b2 = 2.0f;
+        const float r3 = 8.0f, g3 = 3.0f, b3 = 5.0f;
         // Stage 3: warm highlight / yellow
-        const float r3 = 9.0f, g3 = 8.0f, b3 = 1.0f;
+        const float r4 = 5.0f, g4 = 5.0f, b4 = 1.0f;
 
         float r, g, b;
 
         // 2. Piecewise linear interpolation across 3 segments
-        if (val < 0.333333f)
+        if (val < BAND_0)
         {
-            float f = val * 3.0f;
-            r = r0 + f * (r1 - r0);
-            g = g0 + f * (g1 - g0);
-            b = b0 + f * (b1 - b0);
+            float f = val * (1.0f / BAND_0);
+            r = interp(r0, r1, f);
+            g = interp(g0, g1, f);
+            b = interp(b0, b1, f);
         }
-        else if (val < 0.666667f)
+        else if (val < BAND_1)
         {
-            float f = (val - 0.333333f) * 3.0f;
-            r = r1 + f * (r2 - r1);
-            g = g1 + f * (g2 - g1);
-            b = b1 + f * (b2 - b1);
+            float f = (val - BAND_0) * (1.0f / (BAND_1 - BAND_0));
+            r = interp(r1, r2, f);
+            g = interp(g1, g2, f);
+            b = interp(b1, b2, f);
+        }
+        else if (val < BAND_2)
+        {
+            float f = (val - BAND_1) * (1.0 / (BAND_2 - BAND_1));
+            r = interp(r2, r3, f);
+            g = interp(g2, g3, f);
+            b = interp(b2, b3, f);
         }
         else
         {
-            float f = (val - 0.666667f) * 3.0f;
-            r = r2 + f * (r3 - r2);
-            g = g2 + f * (g3 - g2);
-            b = b2 + f * (b3 - b2);
+            float f = (val - BAND_2) * (1.0 / (BAND_3 - BAND_2));
+            r = interp(r3, r4, f);
+            g = interp(g3, g4, f);
+            b = interp(b3, b4, f);
         }
 
         uint16_t r_int = (uint16_t)(r + 0.5f);

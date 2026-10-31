@@ -137,7 +137,7 @@ void check_bt(uint64_t now)
 
     if (bt.feed_rate_updated(&value))
     {
-        float v = value / 100000.0f;
+        float v = value / 10000.0f;
 
         sim.set_feed_rate(v);
 
@@ -149,7 +149,7 @@ void check_bt(uint64_t now)
 
     if (bt.kill_rate_updated(&value))
     {
-        float v = value / 100000.0f;
+        float v = value / 10000.0f;
 
         sim.set_kill_rate(v);
 
@@ -235,6 +235,14 @@ void clear_screen(int active)
     }
 }
 
+void state_supplier(sim_state_t *state)
+{
+    state->feed_rate = sim.feed_rate();
+    state->kill_rate = sim.kill_rate();
+    state->preset = sim.preset();
+    state->spawn_chance = sim.spawn_chance();
+}
+
 void sim_task(void *)
 {
     ESP_LOGI(APP_TAG, "Running main loop on core %d", xPortGetCoreID());
@@ -316,7 +324,7 @@ extern "C" void app_main(void)
 {
     nvs_flash_init();
 
-    bt.init(clear_screen);
+    bt.init(state_supplier);
 
     hub75_driver.init();
 

@@ -67,9 +67,11 @@ public:
         if ((col & 0x1000) == 0x1000)
         {
             uint16_t c = col & 0xFFF;
-            uint16_t curr = get_pixel(x, y);
+            uint16_t b = get_pixel(x, y);
 
-            col = c ^ curr;
+            int brightness = ((b >> 8) & 0xF) * 299 + ((b >> 4) & 0xF) * 587 + ((b & 0xF) * 114) / 1000;
+
+            col = brightness > 128 ? (0xFFF - c) & c & 0xFFF : c;
         }
 
         _frame_buffer[(y * PANEL_WIDTH) + x] = col;

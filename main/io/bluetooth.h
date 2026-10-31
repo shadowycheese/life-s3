@@ -14,6 +14,14 @@
 #include "host/ble_hs.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
+#include "simulation/sim_model.h"
+
+#define COMMAND_STATE 0x40
+#define COMMAND_FEED_RATE 0x41
+#define COMMAND_KILL_RATE 0x42
+#define COMMAND_SPAWN_CHANCE 0x43
+#define COMMAND_PRESET 0x44
+#define COMMAND_RESET 0x45
 
 int gatt_svr_write_callback(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 
@@ -29,7 +37,7 @@ public:
         instance = this;
     };
 
-    void init(void (*state_change)(int))
+    void init(void (*configuration_supplier)(sim_state_t *))
     {
         _gatt_svr_svcs[0] = {};
         _gatt_svr_svcs[0].type = BLE_GATT_SVC_TYPE_PRIMARY;
@@ -40,7 +48,7 @@ public:
         nimble_port_init();
         ble_hs_cfg.sync_cb = ble_app_on_sync_wrapper;
 
-        _state_change = state_change;
+        _configuration_supplier = configuration_supplier;
 
         // 3. Initialize custom GATT tables
         ble_svc_gap_init();
@@ -149,7 +157,10 @@ private:
     {
         if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR)
         {
-            return 0;
+            uint8_t command = ctxt->om->om_data[0];
+            int16_t value = ctxt->om->om_data[1];
+            ESP_LOGI(TAG, "New read characteristic request: %02X %02X ... (%d bytes)", command, value, ctxt->om->om_len);
+            return send_state(ctxt);
         }
         else if (ctxt->om->om_len >= 2)
         {
@@ -162,31 +173,56 @@ private:
                 value += ctxt->om->om_data[2];
             }
 
-            ESP_LOGI(TAG, "New command parsed on Core 1: %d, %d", command, value);
+            ESP_LOGI(TAG, "New command parsed: %02X %02X ... (%d bytes)", command, value, ctxt->om->om_len);
 
             switch (command)
             {
-            case 0x41:
+            case COMMAND_FEED_RATE:
                 _bt_feed_rate = value;
                 break;
-            case 0x42:
+            case COMMAND_KILL_RATE:
                 _bt_kill_rate = value;
                 break;
-            case 0x43:
+            case COMMAND_SPAWN_CHANCE:
                 _bt_spawn_chance = value;
                 break;
-            case 0x44:
+            case COMMAND_PRESET:
                 _bt_preset = value;
                 break;
-            case 0x45:
-                _bt_add = value;
-                break;
-            case 0x46:
+            case COMMAND_RESET:
                 _bt_reset = true;
                 break;
             }
         }
         return 0;
+    }
+
+    int send_state(struct ble_gatt_access_ctxt *ctxt)
+    {
+        sim_state_t state;
+
+        (*_configuration_supplier)(&state);
+
+        uint8_t bytes[9];
+
+        int16_t feed_rate = state.feed_rate * 10000;
+        int16_t kill_rate = state.kill_rate * 10000;
+
+        bytes[0] = COMMAND_STATE;
+        bytes[1] = (feed_rate >> 8) & 0xFF;
+        bytes[2] = (feed_rate) & 0xFF;
+        bytes[3] = (kill_rate >> 8) & 0xFF;
+        bytes[4] = (kill_rate) & 0xFF;
+        bytes[5] = (state.spawn_chance >> 8) & 0xFF;
+        bytes[6] = (state.spawn_chance) & 0xFF;
+        bytes[7] = (state.preset >> 8) & 0xFF;
+        bytes[8] = (state.preset) & 0xFF;
+
+        int err = os_mbuf_append(ctxt->om, bytes, sizeof(bytes));
+
+        ESP_LOGI(TAG, "Sending state: %d", err);
+
+        return err;
     }
 
     void ble_app_advertise(void)
@@ -215,13 +251,11 @@ private:
         {
         case BLE_GAP_EVENT_CONNECT:
             _bt_active = true;
-            //_state_change(1);
             ESP_LOGI("BLE", "Phone Connected! Status: %d", event->connect.status);
             break;
 
         case BLE_GAP_EVENT_DISCONNECT:
             ESP_LOGI("BLE", "Phone Disconnected! Reason: %d. Restarting radio scan...", event->disconnect.reason);
-            //_state_change(0);
             _bt_active = false;
             ble_app_advertise();
             break;
@@ -267,7 +301,7 @@ private:
     volatile int16_t _bt_add = -1;
     volatile bool _bt_active = false;
 
-    void (*_state_change)(int);
+    void (*_configuration_supplier)(sim_state_t *);
 
     const ble_uuid128_t _gatt_svc_uuid = BLE_UUID128_INIT(
         0x50, 0x4F, 0x4E, 0x4D, 0x4C, 0x4B, 0x4A, 0x49,
@@ -283,7 +317,7 @@ private:
         {
             .uuid = &_gatt_chr_uuid.u,
             .access_cb = gatt_svr_write_callback,
-            .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP | BLE_GATT_ACCESS_OP_READ_CHR,
+            .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP | BLE_GATT_CHR_F_READ,
         },
         {
             0, // No more characteristics (Terminator block)
