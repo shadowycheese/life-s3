@@ -29,8 +29,6 @@ Mixed          | 0.022   | 0.051
 #include <esp_random.h>
 #include "simulation/sim_model.h"
 
-#define INITIAL_COUNT (3)
-
 typedef struct
 {
     char name[20];
@@ -49,6 +47,14 @@ typedef struct
     uint8_t r, g, b;
 } rgb_t;
 
+typedef struct
+{
+    float r;
+    float g;
+    float b;
+    float s;
+} band_t;
+
 class Simulation
 {
 public:
@@ -56,6 +62,7 @@ public:
     {
         _width = width;
         _height = height;
+        _hue = 0;
 
         int array_size = _width * _height;
 
@@ -66,8 +73,7 @@ public:
 
         reset();
 
-        _spawn_chance = 100;
-
+        _spawn_chance = 200;
         _feed_rate = _presets[11].feed_rate;
         _kill_rate = _presets[11].kill_rate;
 
@@ -80,6 +86,7 @@ public:
         {
             _feed_rate = config->feed_rate;
             _kill_rate = config->kill_rate;
+            _hue = config->hue % 6;
             _spawn_chance = config->spawn_chance;
         }
     }
@@ -89,6 +96,7 @@ public:
         config->feed_rate = _feed_rate;
         config->kill_rate = _kill_rate;
         config->spawn_chance = _spawn_chance;
+        config->hue = _hue;
         config->magic = SIM_CONFIG_MAGIC;
     }
 
@@ -128,16 +136,19 @@ public:
         return _feed_rate;
     }
 
-    inline void add(int16_t count)
+    inline void next_hue()
     {
-        _init_count += count;
+        _hue = (_hue + 1) % 6;
+    }
+
+    inline void add(int16_t x, int16_t y)
+    {
+        _grid[ap(x, y)].B = 1.0f;
     }
 
     void reset()
     {
         int array_size = _width * _height;
-
-        _init_count = INITIAL_COUNT;
 
         for (int i = 0; i < array_size; i++)
         {
@@ -182,13 +193,7 @@ public:
 
     void simulate()
     {
-        if (_init_count > 0)
-        {
-            spawn();
-
-            _init_count--;
-        }
-        else if ((random() % 10000) < _spawn_chance)
+        if ((random() % 10000) < _spawn_chance)
         {
             spawn();
         }
@@ -202,7 +207,7 @@ public:
 
         float l = constrain(1.0f - (_grid[p].A - _grid[p].B), 0.0f, 1.0f);
 
-        return map_grayscott_rgb444(l);
+        return map_grayscott_rgb444(l) & 0xFFF;
     }
 
 private:
@@ -227,8 +232,7 @@ private:
     int _width;
     int _height;
 
-    int _param_index;
-    int _init_count;
+    int _hue;
 
     cell_t *_grid;
     cell_t *_temp_grid;
@@ -239,77 +243,70 @@ private:
     float _kill_rate;
     int16_t _spawn_chance;
 
-#define BAND_0 (0.20f)
-#define BAND_1 (0.30f)
-#define BAND_2 (0.95f)
-#define BAND_3 (1.00f)
-
     float interp(float from, float to, float val)
     {
-        if (from == to)
-        {
-            return 0.0f;
-        }
-        else if (from > to)
-        {
-            return (from - ((from - to) * val));
-        }
-        else
-        {
-            return (from + ((to - from) * val));
-        }
+        return (from + ((to - from) * val));
     }
+
+    const band_t _bands[5] = {
+        {.r = 0.0f, .g = 0.0f, .b = 0.0f, .s = 0.00f},
+        {.r = 4.0f, .g = 1.0f, .b = 9.0f, .s = 0.40f},
+        {.r = 9.0f, .g = 0.0f, .b = 13.0f, .s = 0.60f},
+        {.r = 11.0f, .g = 3.0f, .b = 2.0f, .s = 0.80f},
+        {.r = 9.0f, .g = 8.0f, .b = 1.0f, .s = 1.00f},
+    };
+    const float r0 = 0.0f, g0 = 0.0f, b0 = 0.0f;
+    // Stage 1: purple/magenta
+    const float r1 = 6.0f, g1 = 1.0f, b1 = 8.0f;
+    // Stage 2: coral/orange
+    const float r2 = 11.0f, g2 = 3.0f, b2 = 2.0f;
+    // Stage 3: warm highlight / yellow
+    const float r3 = 13.0f, g3 = 12.0f, b3 = 1.0f;
+
+    const int _band_count = sizeof(_bands) / sizeof(band_t);
 
     uint16_t map_grayscott_rgb444(float val)
     {
-        // Stage 0: black (background/quiet zone)
-        const float r0 = 0.0f, g0 = 0.0f, b0 = 0.0f;
-        // Stage 0: blue/green (light zone/quiet zone)
-        const float r1 = 0.0f, g1 = 2.5f, b1 = 3.5f;
-        // Stage 1: purple/magenta
-        const float r2 = 4.0f, g2 = 0.0f, b2 = 4.0f;
-        // Stage 2: coral/orange
-        const float r3 = 8.0f, g3 = 3.0f, b3 = 5.0f;
-        // Stage 3: warm highlight / yellow
-        const float r4 = 5.0f, g4 = 5.0f, b4 = 1.0f;
+        float r = 0.0f;
+        float g = 0.0f;
+        float b = 0.0f;
 
-        float r, g, b;
+        for (int i = 1; i < _band_count; i++)
+        {
+            if (val <= _bands[i].s)
+            {
+                float band_size = _bands[i].s - _bands[i - 1].s;
+                float f = (val - _bands[i - 1].s) * (1.0f / band_size);
 
-        // 2. Piecewise linear interpolation across 3 segments
-        if (val < BAND_0)
-        {
-            float f = val * (1.0f / BAND_0);
-            r = interp(r0, r1, f);
-            g = interp(g0, g1, f);
-            b = interp(b0, b1, f);
-        }
-        else if (val < BAND_1)
-        {
-            float f = (val - BAND_0) * (1.0f / (BAND_1 - BAND_0));
-            r = interp(r1, r2, f);
-            g = interp(g1, g2, f);
-            b = interp(b1, b2, f);
-        }
-        else if (val < BAND_2)
-        {
-            float f = (val - BAND_1) * (1.0 / (BAND_2 - BAND_1));
-            r = interp(r2, r3, f);
-            g = interp(g2, g3, f);
-            b = interp(b2, b3, f);
-        }
-        else
-        {
-            float f = (val - BAND_2) * (1.0 / (BAND_3 - BAND_2));
-            r = interp(r3, r4, f);
-            g = interp(g3, g4, f);
-            b = interp(b3, b4, f);
+                r = interp(_bands[i - 1].r, _bands[i].r, f);
+                g = interp(_bands[i - 1].g, _bands[i].g, f);
+                b = interp(_bands[i - 1].b, _bands[i].b, f);
+
+                break;
+            }
         }
 
         uint16_t r_int = (uint16_t)(r + 0.5f);
         uint16_t g_int = (uint16_t)(g + 0.5f);
         uint16_t b_int = (uint16_t)(b + 0.5f);
 
-        return RGB(r_int, g_int, b_int);
+        switch (_hue)
+        {
+        case 0:
+            return RGB(r_int, g_int, b_int);
+        case 1:
+            return RGB(r_int, b_int, g_int);
+        case 0:
+            return RGB(g_int, r_int, b_int);
+        case 1:
+            return RGB(g_int, b_int, r_int);
+        case 0:
+            return RGB(b_int, r_int, g_int);
+        case 1:
+            return RGB(b_int, g_int, r_int);
+        default:
+            return RGB(r_int, g_int, b_int);
+        }
     }
 
     inline void spawn()

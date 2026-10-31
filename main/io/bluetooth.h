@@ -22,6 +22,8 @@
 #define COMMAND_SPAWN_CHANCE 0x43
 #define COMMAND_PRESET 0x44
 #define COMMAND_RESET 0x45
+#define COMMAND_ADD 0x46
+#define COMMAND_CYCLE 0x47
 
 int gatt_svr_write_callback(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 
@@ -192,6 +194,12 @@ private:
             case COMMAND_RESET:
                 _bt_reset = true;
                 break;
+            case COMMAND_ADD:
+                _bt_add = value;
+                break;
+            case COMMAND_ADD:
+                _bt_next_hue = value;
+                break;
             }
         }
         return 0;
@@ -299,6 +307,7 @@ private:
     volatile int16_t _bt_spawn_chance = -1;
     volatile bool _bt_reset = false;
     volatile int16_t _bt_add = -1;
+    volatile int16_t _bt_next_hue = -1;
     volatile bool _bt_active = false;
 
     void (*_configuration_supplier)(sim_state_t *);

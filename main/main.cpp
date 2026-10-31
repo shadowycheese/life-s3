@@ -25,7 +25,7 @@ const char *APP_TAG = "APP";
 
 #define TICK_SIZE (10)
 
-#define OVERLAY_TIME (3LL * 1000LL * 1000LL)
+#define OVERLAY_TIME (2LL * 1000LL * 1000LL)
 #define CONFIGURATION_SAVE_DELAY (20LL * 1000LL * 1000LL)
 
 esp_err_t save_configuration(const sim_configuration_t *config)
@@ -183,11 +183,19 @@ void check_bt(uint64_t now)
 
     if (bt.add_command(&value))
     {
-        sim.add(value);
+        int16_t x = (value >> 8) & 0xFF;
+        int16_t y = value & 0xFF;
+        sim.add(x, y);
 
-        ESP_LOGI(APP_TAG, "Added: %d", value);
+        ESP_LOGI(APP_TAG, "Add: %d, %d", x, y);
+    }
 
-        overlay_expiry = now + OVERLAY_TIME;
+    if (bt.next_hue(&value))
+    {
+        sim.next_hue();
+
+        ESP_LOGI(APP_TAG, "Next hue", x, y);
+
         save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
     }
 
@@ -196,9 +204,6 @@ void check_bt(uint64_t now)
         sim.reset();
 
         ESP_LOGI(APP_TAG, "Reset");
-
-        overlay_expiry = now + OVERLAY_TIME;
-        save_configuration_time = now + CONFIGURATION_SAVE_DELAY;
     }
 }
 
@@ -300,9 +305,7 @@ void sim_task(void *)
 
         if (save_configuration_time > 0)
         {
-            display.draw_pixel(61, 31, 0x0C00);
-            display.draw_pixel(62, 31, 0x00C0);
-            display.draw_pixel(63, 31, 0x000C);
+            display.draw_pixel(63, 31, 0x0C00);
         }
 
         display.commit_frame();
