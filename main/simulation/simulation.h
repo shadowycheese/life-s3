@@ -296,13 +296,13 @@ private:
             return RGB(r_int, g_int, b_int);
         case 1:
             return RGB(r_int, b_int, g_int);
-        case 0:
+        case 2:
             return RGB(g_int, r_int, b_int);
-        case 1:
+        case 3:
             return RGB(g_int, b_int, r_int);
-        case 0:
+        case 4:
             return RGB(b_int, r_int, g_int);
-        case 1:
+        case 5:
             return RGB(b_int, g_int, r_int);
         default:
             return RGB(r_int, g_int, b_int);

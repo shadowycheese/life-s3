@@ -4,7 +4,27 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-// HUB75 pin assignments
+#define STEF 1
+
+#if STEF
+#define PIN_B1 GPIO_NUM_1
+#define PIN_R1 GPIO_NUM_2
+#define PIN_G1 GPIO_NUM_3
+#define PIN_R2 GPIO_NUM_4
+#define PIN_B2 GPIO_NUM_5
+#define PIN_G2 GPIO_NUM_6
+
+#define PIN_CLK GPIO_NUM_12
+#define PIN_LAT GPIO_NUM_11
+
+#define PIN_OE GPIO_NUM_13
+
+#define PIN_A GPIO_NUM_8
+#define PIN_B GPIO_NUM_7
+#define PIN_C GPIO_NUM_10
+#define PIN_D GPIO_NUM_9
+
+#else
 #define PIN_B1 GPIO_NUM_1
 #define PIN_R1 GPIO_NUM_2
 #define PIN_G1 GPIO_NUM_3
@@ -13,11 +33,13 @@
 #define PIN_G2 GPIO_NUM_6
 #define PIN_CLK GPIO_NUM_7
 #define PIN_LAT GPIO_NUM_8
+
 #define PIN_OE GPIO_NUM_9
-#define PIN_A GPIO_NUM_10
-#define PIN_B GPIO_NUM_11
-#define PIN_C GPIO_NUM_12
-#define PIN_D GPIO_NUM_13
+#define PIN_A GPIO_NUM_13
+#define PIN_B GPIO_NUM_12
+#define PIN_C GPIO_NUM_11
+#define PIN_D GPIO_NUM_10
+#endif
 
 static const gpio_num_t output_pins[] = {
     PIN_B1, PIN_R1, PIN_G1,
@@ -49,9 +71,9 @@ static void init_gpio(void)
 static void set_row_address(int row)
 {
     gpio_set_level(PIN_A, (row >> 0) & 1);
-    gpio_set_level(PIN_B, (row >> 1) & 1);
-    gpio_set_level(PIN_C, (row >> 2) & 1);
-    gpio_set_level(PIN_D, (row >> 3) & 1);
+    gpio_set_level(PIN_B, (row >> 1) & 0);
+    gpio_set_level(PIN_C, (row >> 2) & 0);
+    gpio_set_level(PIN_D, (row >> 3) & 0);
 }
 
 // Six vertical colour bars
@@ -65,8 +87,8 @@ static void set_pixel_bus(int x)
 
     // Upper half
     gpio_set_level(PIN_R1, r);
-    gpio_set_level(PIN_G1, g);
-    gpio_set_level(PIN_B1, b);
+    gpio_set_level(PIN_G1, 0);
+    gpio_set_level(PIN_B1, 0);
 
     // Lower half
     gpio_set_level(PIN_R2, r);
@@ -99,7 +121,7 @@ static void scan_row(int row)
 
     // Display this row pair
     gpio_set_level(PIN_OE, 0);
-    esp_rom_delay_us(500);
+    esp_rom_delay_us(50000);
     gpio_set_level(PIN_OE, 1);
 }
 

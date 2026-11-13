@@ -12,13 +12,13 @@
 #define FEED_RATE_ENCODER 0
 #define KILL_RATE_ENCODER 1
 
-#define FEED_RATE_ENCODER_PIN_A GPIO_NUM_38
-#define FEED_RATE_ENCODER_PIN_B GPIO_NUM_37
-#define FEED_RATE_ENCODER_BUTTON_PIN GPIO_NUM_36
+#define FEED_RATE_ENCODER_PIN_A GPIO_NUM_39
+#define FEED_RATE_ENCODER_PIN_B GPIO_NUM_38
+#define FEED_RATE_ENCODER_BUTTON_PIN GPIO_NUM_21
 
-#define KILL_RATE_ENCODER_PIN_A GPIO_NUM_21
-#define KILL_RATE_ENCODER_PIN_B GPIO_NUM_39
-#define KILL_RATE_ENCODER_BUTTON_PIN GPIO_NUM_35
+#define KILL_RATE_ENCODER_PIN_A GPIO_NUM_41
+#define KILL_RATE_ENCODER_PIN_B GPIO_NUM_42
+#define KILL_RATE_ENCODER_BUTTON_PIN GPIO_NUM_40
 
 void spin_feed_rate_isr(void *);
 void spin_kill_rate_isr(void *);
@@ -33,8 +33,9 @@ typedef enum
 
 #define CLICK_DEBOUNCE (100LL * 1000LL)
 #define HOLD_DEBOUCE (2000LL * 1000LL)
-#define HOLD_REPEAT (250LL * 1000LL)
-#define CLICK_MAX (HOLD_DEBOUCE - HOLD_REPEAT)
+#define HOLD_REPEAT_FR (250LL * 1000LL)
+#define HOLD_REPEAT_KR (750LL * 1000LL)
+#define CLICK_MAX (HOLD_DEBOUCE - HOLD_REPEAT_FR)
 
 class RotaryEncoders
 {
@@ -123,9 +124,8 @@ private:
 
                 if (hold_time > HOLD_DEBOUCE)
                 {
-                    _button_down_time[encoder] += HOLD_REPEAT;
+                    _button_down_time[encoder] += _hold_repaeat[encoder];
 
-                    printf("HELD\n");
                     return BUTTON_HELD;
                 }
             }
@@ -138,7 +138,6 @@ private:
 
             if ((diff > CLICK_DEBOUNCE) && (diff < CLICK_MAX))
             {
-                printf("CLICKED\n");
                 return BUTTON_CLICKED;
             }
         }
@@ -196,6 +195,8 @@ private:
     uint8_t _state[2] = {0, 0};
 
     volatile int _detente[2] = {0, 0};
+
+    const int _hold_repaeat[2] = {HOLD_REPEAT_FR, HOLD_REPEAT_KR};
 
     static RotaryEncoders *instance;
 
